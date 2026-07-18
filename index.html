@@ -34,10 +34,9 @@
                 <h1 class="text-xl font-black text-emerald-400 tracking-tight">WUU2K 45KM DEMO TRACKER</h1>
                 <p class="text-gray-400 text-xs">High-Precision Course Simulator</p>
             </div>
-            <button onclick="document.getElementById('gpx-file-input').click()" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition shadow-md cursor-pointer">
-                🗺️ Load Full GPX
-            </button>
-            <input type="file" id="gpx-file-input" accept=".gpx" class="hidden" onchange="loadGPXFile(event)">
+            <div id="gpx-status" class="bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1 text-[11px] text-amber-400 font-mono">
+                ⏳ Loading course.gpx...
+            </div>
         </div>
 
         <!-- Simulation Controls Panel -->
@@ -51,7 +50,7 @@
                     <input type="text" id="input-pace" class="w-full bg-gray-950 border border-gray-700 rounded-lg p-2 font-mono text-emerald-400 font-bold text-center text-sm focus:outline-none focus:border-emerald-500" value="8:30" onchange="updateSimulation()">
                 </div>
                 
-                <!-- Enhanced Start Time Inputs -->
+                <!-- Start Time Inputs -->
                 <div>
                     <label class="block text-gray-400 font-bold mb-1">Race Start Time:</label>
                     <div class="flex gap-1">
@@ -122,28 +121,26 @@
     </div>
 
     <script>
-        // Checkpoint markers - AS3 corrected to 27.2km
+        // Checkpoint markers
         const aidStations = [
             { name: "Start (Khandallah Park)", dist: 0, lat: -41.2407, lon: 174.7865, difficulty: 1.0 },
             { name: "AS1: Makara Road", dist: 11.5, lat: -41.2778, lon: 174.7247, difficulty: 1.40 }, 
             { name: "AS2: Makara MB Park", dist: 17.5, lat: -41.2942, lon: 174.7292, difficulty: 1.20 }, 
-            { name: "AS3: Brooklyn Turbine", dist: 27.2, lat: -41.3122, lon: 174.7257, difficulty: 1.30 }, // Fixed to 27.2km
+            { name: "AS3: Brooklyn Turbine", dist: 27.2, lat: -41.3122, lon: 174.7257, difficulty: 1.30 }, 
             { name: "AS4: Tawatawa Ent.", dist: 34.0, lat: -41.3276, lon: 174.7667, difficulty: 1.05 }, 
             { name: "AS5: Mt Albert Wall", dist: 39.0, lat: -41.3317, lon: 174.7866, difficulty: 1.35 }, 
             { name: "Finish: Hataitai Velodrome", dist: 45.0, lat: -41.3032, lon: 174.7958, difficulty: 1.10 } 
         ];
 
-        // Default layout reference line mapping track coordinates
+        // Placeholder fallback path arrays before background file loader completes
         let courseCoordinates = [
             [-41.240718, 174.786546], [-41.240795, 174.786510], [-41.240822, 174.786482],
             [-41.238963, 174.787245], [-41.237562, 174.787052], [-41.235537, 174.780960],
             [-41.233941, 174.778707], [-41.235842, 174.770513], [-41.238923, 174.763497],
-            [-41.252449, 174.748963], [-41.264514, 174.743843], [-41.277346, 174.728539],
-            [-41.294200, 174.729200], [-41.312200, 174.725700], [-41.327600, 174.766700],
-            [-41.331700, 174.786600], [-41.303200, 174.795800]
+            [-41.252449, 174.748963], [-41.264514, 174.743843], [-41.277346, 174.728539]
         ];
 
-        // Initialize Map Elements
+        // Initialize Map
         const map = L.map('map', { zoomControl: false }).setView([-41.28, 174.75], 12);
         L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
@@ -161,34 +158,42 @@
             masterCoursePolyline = L.polyline(courseCoordinates, { color: '#a855f7', weight: 4, opacity: 0.6, dashArray: '4, 6' }).addTo(map);
         }
 
-        // Live GPX parsing engine update hook
-        function loadGPXFile(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const parser = new DOMParser();
-                    const xmlDoc = parser.parseFromString(e.target.result, "text/xml");
-                    const trkpts = xmlDoc.getElementsByTagName("trkpt");
-                    const points = [];
-                    for (let i = 0; i < trkpts.length; i++) {
-                        const lat = parseFloat(trkpts[i].getAttribute("lat"));
-                        const lon = parseFloat(trkpts[i].getAttribute("lon"));
-                        if (!isNaN(lat) && !isNaN(lon)) points.push([lat, lon]);
-                    }
-                    if (points.length > 0) {
-                        courseCoordinates = points;
-                        drawMasterCourse();
-                        map.fitBounds(masterCoursePolyline.getBounds());
-                        updateSimulation();
-                    }
-                } catch (err) { alert("Error compiling internal GPX coordinates."); }
-            };
-            reader.readAsText(file);
+        // Automatic Server Background GPX Fetching Function
+        async function fetchEmbeddedGPX() {
+            try {
+                const response = await fetch('./course.gpx');
+                if (!response.ok) throw new Error("File not found inside directory folder asset channels.");
+                
+                const gpxText = await response.text();
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(gpxText, "text/xml");
+                const trkpts = xmlDoc.getElementsByTagName("trkpt");
+                const points = [];
+
+                for (let i = 0; i < trkpts.length; i++) {
+                    const lat = parseFloat(trkpts[i].getAttribute("lat"));
+                    const lon = parseFloat(trkpts[i].getAttribute("lon"));
+                    if (!isNaN(lat) && !isNaN(lon)) points.push([lat, lon]);
+                }
+
+                if (points.length > 0) {
+                    courseCoordinates = points;
+                    drawMasterCourse();
+                    map.fitBounds(masterCoursePolyline.getBounds());
+                    
+                    const statusIndicator = document.getElementById('gpx-status');
+                    statusIndicator.innerText = "🎯 GPX Course Loaded";
+                    statusIndicator.className = "bg-emerald-950/40 border border-emerald-500/30 rounded-lg px-2.5 py-1 text-[11px] text-emerald-400 font-mono";
+                    
+                    updateSimulation();
+                }
+            } catch (err) {
+                console.warn("Could not load internal repo course.gpx automatically. Running layout presets.", err);
+                document.getElementById('gpx-status').innerText = "⚠️ course.gpx missing";
+                document.getElementById('gpx-status').className = "bg-red-950/40 border border-red-500/30 rounded-lg px-2.5 py-1 text-[11px] text-red-400 font-mono";
+            }
         }
 
-        // Synchronize Slider Bar and Text Box inputs seamlessly
         function syncDistanceInputs(source) {
             const slider = document.getElementById('input-distance-slider');
             const text = document.getElementById('input-distance-text');
@@ -205,7 +210,6 @@
             updateSimulation();
         }
 
-        // Interpolate distance along coordinates safely
         function getCoordinatesAtDistance(targetKm) {
             let totalKm = 0;
             if (targetKm <= 0) return courseCoordinates[0];
@@ -251,7 +255,6 @@
             const decimalPace = parseFloat(paceParts[0]) + (parseFloat(paceParts[1] || 0) / 60);
             const totalElapsedMins = Math.round(currentDistKm * decimalPace);
 
-            // Construct 24hr millisecond timestamp from split inputs safely
             let hour24 = parseInt(document.getElementById('start-hour').value);
             const mins = parseInt(document.getElementById('start-minute').value);
             const ampm = document.getElementById('start-ampm').value;
@@ -262,13 +265,11 @@
             const raceStartMs = new Date().setHours(hour24, mins, 0, 0);
             const currentRaceTimeMs = raceStartMs + (totalElapsedMins * 60000);
 
-            // Update UI Card Metric Displays
             document.getElementById('stat-distance').innerText = `${currentDistKm.toFixed(2)} km`;
             document.getElementById('stat-time').innerText = formatHoursMinutes(totalElapsedMins);
             document.getElementById('stat-pace').innerText = `${paceStr} /km`;
             document.getElementById('stat-current-time').innerText = new Date(currentRaceTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-            // Redraw Map Vectors
             if (runningProgressLine) map.removeLayer(runningProgressLine);
             if (currentDistKm > 0) {
                 runningProgressLine = L.polyline(getProgressCoordinates(currentDistKm), { color: '#0ea5e9', weight: 5, opacity: 1 }).addTo(map);
@@ -315,11 +316,21 @@
             });
         }
 
-        // Formats numerical minutes cleanly into hours:minutes output text strings
         function formatHoursMinutes(totalMinutes) {
             const h = Math.floor(totalMinutes / 60);
             const m = totalMinutes % 60;
             return `${h}:${m.toString().padStart(2, '0')}`;
+        }
+
+        function initializeTableVisuals() {
+            const tbody = document.getElementById('checkpoint-table-body');
+            tbody.innerHTML = aidStations.map(as => `
+                <tr class="border-b border-gray-800 text-[11px] text-gray-400">
+                    <td class="py-2 font-semibold text-gray-300">${as.name}</td>
+                    <td class="py-2 text-right font-mono">${as.dist}</td>
+                    <td class="py-2 text-right font-mono text-gray-600 italic">awaiting trace load...</td>
+                </tr>
+            `).join('');
         }
 
         function getHaversineDist(pt1, pt2) {
@@ -328,14 +339,14 @@
             const dLon = (pt2.lon - pt1.lon) * Math.PI / 180;
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                       Math.cos(pt1.lat * Math.PI / 180) * Math.cos(pt2.lat * Math.PI / 180) * 
-                      Math.sin(dLon/2) * dLon/2;
+                      Nice = Math.sin(dLon/2) * dLon/2;
             return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
         }
 
         document.addEventListener("DOMContentLoaded", () => {
             drawMasterCourse();
             initializeTableVisuals();
-            updateSimulation();
+            fetchEmbeddedGPX();
         });
     </script>
 </body>
