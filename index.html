@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WUU2K 45km Demo Tracker</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        #map { height: 420px; border-radius: 0.75rem; }
+        .pulsing-runner {
+            background: #22c55e;
+            border-radius: 50%;
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, 1);
+            animation: pulse 1.5s infinite;
+            border: 2px solid white;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 12px rgba(34, 197, 94, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-3 sm:p-6 select-none">
+
+    <div class="max-w-4xl mx-auto space-y-4">
+        <!-- Header -->
+        <div class="flex items-center justify-between border-b border-gray-800 pb-3">
+            <div>
+                <h1 class="text-xl font-black text-emerald-400 tracking-tight">WUU2K 45KM DEMO TRACKER</h1>
+                <p class="text-gray-400 text-xs">Manual Pace Simulator</p>
+            </div>
+            <button onclick="document.getElementById('gpx-file-input').click()" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition shadow-md">
+                🗺️ Load GPX
+            </button>
+            <input type="file" id="gpx-file-input" accept=".gpx" class="hidden" onchange="loadGPXFile(event)">
+        </div>
+
+        <!-- Simulation Controls Panel -->
+        <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 space-y-4 shadow-lg">
+            <span class="font-black text-amber-400 text-xs block uppercase tracking-wider">⚙️ Simulation Controls</span>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div>
+                    <label class="block text-gray-400 font-bold mb-1">Average Pace (min/km):</label>
+                    <input type="text" id="input-pace" class="w-full bg-gray-950 border border-gray-700 rounded-lg p-2 font-mono text-emerald-400 font-bold text-center text-sm" value="8:30" onchange="updateSimulation()">
+                </div>
+                <div>
+                    <label class="block text-gray-400 font-bold mb-1">Race Start Time:</label>
+                    <input type="time" id="input-start-time" class="w-full bg-gray-950 border border-gray-700 rounded-lg p-2 font-mono text-white text-center text-sm" value="07:00" onchange="updateSimulation()">
+                </div>
+                <div>
+                    <label class="block text-gray-400 font-bold mb-1">Distance Covered: <span id="slider-val" class="text-emerald-400 font-mono font-bold">12.00 km</span></label>
+                    <div class="pt-2">
+                        <input type="range" id="input-distance" min="0" max="45" step="0.1" value="12" class="w-full h-2 bg-gray-950 rounded-lg appearance-none cursor-pointer accent-emerald-400" oninput="updateSimulation()">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metric Grid Display -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-gray-800/60 p-3 rounded-xl border border-gray-800 text-center">
+            <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-800/50">
+                <div class="text-[10px] text-gray-400 font-bold uppercase">Distance</div>
+                <div id="stat-distance" class="text-xl font-black text-white mt-0.5">-- km</div>
+            </div>
+            <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-800/50">
+                <div class="text-[10px] text-gray-400 font-bold uppercase">Time Elapsed</div>
+                <div id="stat-time" class="text-xl font-black text-white mt-0.5">-- mins</div>
+            </div>
+            <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-800/50">
+                <div class="text-[10px] text-gray-400 font-bold uppercase">Avg Pace</div>
+                <div id="stat-pace" class="text-xl font-black text-white mt-0.5">-- /km</div>
+            </div>
+            <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-800/50">
+                <div class="text-[10px] text-gray-400 font-bold uppercase">Status</div>
+                <div id="stat-updated" class="text-sm font-black text-amber-400 mt-1">Demo Mode</div>
+            </div>
+        </div>
+
+        <!-- Map Screen Panel -->
+        <div id="map"></div>
+
+        <!-- Checkpoints Data Array Panel -->
+        <div class="bg-gray-800 p-4 rounded-xl border border-gray-800">
+            <h2 class="text-sm font-bold mb-2 border-b border-gray-700 pb-1 text-emerald-400 uppercase tracking-wider">Crew Split Projections</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead>
+                        <tr class="text-[10px] text-gray-400 uppercase border-b border-gray-700">
+                            <th class="py-1">Location</th>
+                            <th class="py-1 text-right">KM</th>
+                            <th class="py-1 text-right">Time / Est</th>
+                        </tr>
+                    </thead>
+                    <tbody id="checkpoint-table-body">
+                        <!-- Handled dynamically by javascript updates -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Checkpoint markers
+        const aidStations = [
+            { name: "Start (Khandallah Park)", dist: 0, lat: -41.2407, lon: 174.7865, difficulty: 1.0 },
+            { name: "AS1: Makara Road", dist: 11.5, lat: -41.2778, lon: 174.7247, difficulty: 1.40 }, 
+            { name: "AS2: Makara MB Park", dist: 17.5, lat: -41.2942, lon: 174.7292, difficulty: 1.20 }, 
+            { name: "AS3: Brooklyn Turbine", dist: 25.0, lat: -41.3122, lon: 174.7257, difficulty: 1.30 }, 
+            { name: "AS4: Tawatawa Ent.", dist: 34.0, lat: -41.3276, lon: 174.7667, difficulty: 1.05 }, 
+            { name: "AS5: Mt Albert Wall", dist: 39.0, lat: -41.3317, lon: 174.7866, difficulty: 1.35 }, 
+            { name: "Finish: Hataitai Velodrome", dist: 45.0, lat: -41.3032, lon: 174.7958, difficulty: 1.10 } 
+        ];
+
+        // Default track coordinates fallback trace layout bounds
+        let courseCoordinates = [
+            [-41.240718, 174.786546], [-41.240795, 174.786509], [-41.240822, 174.786482],
+            [-41.238963, 174.787245], [-41.237562, 174.787052], [-41.235537, 174.780960],
+            [-41.233941, 174.778707], [-41.235842, 174.770513], [-41.238923, 174.763497],
+            [-41.252449, 174.748963], [-41.264514, 174.743843], [-41.277346, 174.728539],
+            [-41.294200, 174.729200], [-41.312200, 174.725700], [-41.327600, 174.766700],
+            [-41.331700, 174.786600], [-41.303200, 174.795800]
+        ];
+
+        // Map Setup
+        const map = L.map('map', { zoomControl: false }).setView([-41.28, 174.75], 12);
+        L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+        const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+
+        L.control.layers({ "Dark Map": darkLayer, "Satellite": satelliteLayer }, null, { position: 'topright' }).addTo(map);
+
+        let masterCoursePolyline = null;
+        let runningProgressLine = null; 
+        let runnerMarker = null;
+
+        function drawMasterCourse() {
+            if (masterCoursePolyline) map.removeLayer(masterCoursePolyline);
+            masterCoursePolyline = L.polyline(courseCoordinates, { color: '#a855f7', weight: 4, opacity: 0.6, dashArray: '4, 6' }).addTo(map);
+        }
+
+        // Parse GPX text files uploaded dynamically
+        function loadGPXFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(e.target.result, "text/xml");
+                    const trkpts = xmlDoc.getElementsByTagName("trkpt");
+                    const points = [];
+                    for (let i = 0; i < trkpts.length; i++) {
+                        const lat = parseFloat(trkpts[i].getAttribute("lat"));
+                        const lon = parseFloat(trkpts[i].getAttribute("lon"));
+                        if (!isNaN(lat) && !isNaN(lon)) points.push([lat, lon]);
+                    }
+                    if (points.length > 0) {
+                        courseCoordinates = points;
+                        drawMasterCourse();
+                        map.fitBounds(masterCoursePolyline.getBounds());
+                        updateSimulation();
+                    }
+                } catch (err) { alert("GPX file compilation error."); }
+            };
+            reader.readAsText(file);
+        }
+
+        // Distance-based interpolation math mapping coords to trail lines
+        function getCoordinatesAtDistance(targetKm) {
+            let totalKm = 0;
+            if (targetKm <= 0) return courseCoordinates[0];
+            
+            for (let i = 1; i < courseCoordinates.length; i++) {
+                const p1 = { lat: courseCoordinates[i-1][0], lon: courseCoordinates[i-1][1] };
+                const p2 = { lat: courseCoordinates[i][0], lon: courseCoordinates[i][1] };
+                const segKm = getHaversineDist(p1, p2);
+                
+                if (totalKm + segKm >= targetKm) {
+                    const ratio = (targetKm - totalKm) / segKm;
+                    const resLat = p1.lat + (p2.lat - p1.lat) * ratio;
+                    const resLon = p1.lon + (p2.lon - p1.lon) * ratio;
+                    return [resLat, resLon];
+                }
+                totalKm += segKm;
+            }
+            return courseCoordinates[courseCoordinates.length - 1];
+        }
+
+        function getProgressCoordinates(targetKm) {
+            let totalKm = 0;
+            const progressPath = [courseCoordinates[0]];
+            
+            for (let i = 1; i < courseCoordinates.length; i++) {
+                const p1 = { lat: courseCoordinates[i-1][0], lon: courseCoordinates[i-1][1] };
+                const p2 = { lat: courseCoordinates[i][0], lon: courseCoordinates[i][1] };
+                const segKm = getHaversineDist(p1, p2);
+                
+                if (totalKm + segKm >= targetKm) {
+                    progressPath.push(getCoordinatesAtDistance(targetKm));
+                    break;
+                }
+                progressPath.push(courseCoordinates[i]);
+                totalKm += segKm;
+            }
+            return progressPath;
+        }
+
+        function updateSimulation() {
+            const paceStr = document.getElementById('input-pace').value.trim();
+            const currentDistKm = parseFloat(document.getElementById('input-distance').value);
+            document.getElementById('slider-val').innerText = `${currentDistKm.toFixed(2)} km`;
+
+            const paceParts = paceStr.split(':');
+            const decimalPace = parseFloat(paceParts[0]) + (parseFloat(paceParts[1] || 0) / 60);
+            const totalElapsedMins = Math.round(currentDistKm * decimalPace);
+
+            document.getElementById('stat-distance').innerText = `${currentDistKm.toFixed(2)} km`;
+            document.getElementById('stat-time').innerText = `${totalElapsedMins} mins`;
+            document.getElementById('stat-pace').innerText = `${paceStr} /km`;
+
+            if (runningProgressLine) map.removeLayer(runningProgressLine);
+            if (currentDistKm > 0) {
+                runningProgressLine = L.polyline(getProgressCoordinates(currentDistKm), { color: '#0ea5e9', weight: 5, opacity: 1 }).addTo(map);
+            }
+
+            const currentPos = getCoordinatesAtDistance(currentDistKm);
+            if (runnerMarker) map.removeLayer(runnerMarker);
+            runnerMarker = L.marker(currentPos, {
+                icon: L.divIcon({ className: 'pulsing-runner', iconSize: [12, 12], iconAnchor: [6, 6] })
+            }).addTo(map);
+
+            calculateDemoTableTimes(currentDistKm, decimalPace);
+        }
+
+        function calculateDemoTableTimes(currentDistKm, decimalPace) {
+            const tbody = document.getElementById('checkpoint-table-body');
+            tbody.innerHTML = '';
+
+            const startTimeStr = document.getElementById('input-start-time').value;
+            const startParts = startTimeStr.split(':');
+            const raceStartMs = new Date().setHours(parseInt(startParts[0]), parseInt(startParts[1]), 0, 0);
+            
+            let rollingTimeMs = raceStartMs + (currentDistKm * decimalPace * 60000);
+            let forwardReferenceDist = currentDistKm;
+
+            aidStations.forEach(as => {
+                let statusClass = "text-emerald-400 font-bold";
+                let timeDisplay = "";
+
+                if (currentDistKm >= as.dist) {
+                    statusClass = "text-gray-500 line-through font-normal";
+                    timeDisplay = new Date(raceStartMs + (as.dist * decimalPace * 60000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                } else {
+                    const segmentGap = as.dist - forwardReferenceDist;
+                    rollingTimeMs += segmentGap * (decimalPace * as.difficulty) * 60000;
+                    timeDisplay = `~ ${new Date(rollingTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                    forwardReferenceDist = as.dist;
+                }
+
+                tbody.innerHTML += `
+                    <tr class="border-b border-gray-800 text-[11px]">
+                        <td class="py-2 font-semibold ${statusClass.includes('line-through') ? 'text-gray-500' : 'text-gray-200'}">${as.name}</td>
+                        <td class="py-2 text-right text-gray-400 font-mono">${as.dist}</td>
+                        <td class="py-2 text-right font-mono ${statusClass}">${timeDisplay}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        function getHaversineDist(pt1, pt2) {
+            const R = 6371; 
+            const dLat = (pt2.lat - pt1.lat) * Math.PI / 180;
+            const dLon = (pt2.lon - pt1.lon) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(pt1.lat * Math.PI / 180) * Math.cos(pt2.lat * Math.PI / 180) * 
+                      Math.sin(dLon/2) * dLon/2;
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            drawMasterCourse();
+            initializeTableVisuals();
+            updateSimulation();
+        });
+    </script>
+</body>
+</html>
