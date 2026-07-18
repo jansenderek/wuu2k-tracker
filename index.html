@@ -11,6 +11,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         #map { height: 440px; border-radius: 0.75rem; }
+        #elevation-chart { width: 100%; height: 160px; background-color: #0b0f19; border-radius: 0.75rem; }
         .pulsing-runner {
             background: #22c55e;
             border-radius: 50%;
@@ -31,8 +32,8 @@
         <!-- Header -->
         <div class="flex items-center justify-between border-b border-gray-800 pb-3">
             <div>
-                <h1 class="text-xl font-black text-emerald-400 tracking-tight">WUU2K 45KM DEMO TRACKER</h1>
-                <p class="text-gray-400 text-xs">High-Precision Course Simulator</p>
+                <h1 class="text-xl font-black text-emerald-400 tracking-tight">WUU2K 45KM SIMULATOR</h1>
+                <p class="text-gray-400 text-xs">High-Precision Topo Profile Tracking Engine</p>
             </div>
             <div id="gpx-status" class="bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1 text-[11px] text-amber-400 font-mono">
                 ⏳ Loading course.gpx...
@@ -64,14 +65,14 @@
                     </div>
                 </div>
 
-                <!-- Dual Distance Inputs -->
+                <!-- Distance Management Input Row -->
                 <div>
                     <div class="flex justify-between items-center mb-1">
                         <label class="text-gray-400 font-bold">Distance Covered:</label>
-                        <input type="number" id="input-distance-text" min="0" max="45" step="0.1" value="12.0" class="w-20 bg-gray-950 border border-gray-700 rounded-md p-1 font-mono text-emerald-400 font-bold text-center text-xs focus:outline-none focus:border-emerald-500" oninput="syncDistanceInputs('text')">
+                        <input type="number" id="input-distance-text" min="0" max="45" step="0.1" value="5.0" class="w-20 bg-gray-950 border border-gray-700 rounded-md p-1 font-mono text-emerald-400 font-bold text-center text-xs focus:outline-none focus:border-emerald-500" oninput="syncDistanceInputs('text')">
                     </div>
                     <div class="pt-2">
-                        <input type="range" id="input-distance-slider" min="0" max="45" step="0.05" value="12" class="w-full h-2 bg-gray-950 rounded-lg appearance-none cursor-pointer accent-emerald-400" oninput="syncDistanceInputs('slider')">
+                        <input type="range" id="input-distance-slider" min="0" max="45" step="0.01" value="5" class="w-full h-2 bg-gray-950 rounded-lg appearance-none cursor-pointer accent-emerald-400" oninput="syncDistanceInputs('slider')">
                     </div>
                 </div>
             </div>
@@ -80,27 +81,40 @@
         <!-- Metric Grid Display -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-gray-800/60 p-3 rounded-xl border border-gray-800 text-center">
             <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-800/50">
-                <div class="text-[10px] text-gray-400 font-bold uppercase">Distance</div>
-                <div id="stat-distance" class="text-xl font-black text-white mt-0.5">-- km</div>
+                <div class="text-[10px] text-gray-400 font-bold uppercase">Progress Specs</div>
+                <div id="stat-distance" class="text-xl font-black text-white mt-0.5">0.00 km</div>
+                <div id="stat-altitude-current" class="text-[10px] text-emerald-400 font-medium mt-0.5">Alt: -- m</div>
             </div>
             <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-800/50">
-                <div class="text-[10px] text-gray-400 font-bold uppercase">Time Elapsed</div>
-                <div id="stat-time" class="text-xl font-black text-white mt-0.5">-- mins</div>
+                <div class="text-[10px] text-gray-400 font-bold uppercase">Time Metrics</div>
+                <div id="stat-time" class="text-xl font-black text-white mt-0.5">0:00</div>
+                <div id="stat-current-time" class="text-[10px] text-amber-400 font-medium mt-0.5">Clock: --:--</div>
             </div>
             <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-800/50">
-                <div class="text-[10px] text-gray-400 font-bold uppercase">Current Time</div>
-                <div id="stat-current-time" class="text-xl font-black text-amber-400 mt-0.5">--:--</div>
+                <div class="text-[10px] text-gray-400 font-bold uppercase">Total Elevation Climb</div>
+                <div id="stat-climb-ascent" class="text-xl font-black text-white mt-0.5">+ 0 m</div>
+                <div class="text-[10px] text-gray-400 font-medium mt-0.5">Cumulative Gain</div>
             </div>
             <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-800/50">
-                <div class="text-[10px] text-gray-400 font-bold uppercase">Avg Pace</div>
-                <div id="stat-pace" class="text-xl font-black text-white mt-0.5">-- /km</div>
+                <div class="text-[10px] text-gray-400 font-bold uppercase">Total Vertical Descent</div>
+                <div id="stat-climb-descent" class="text-xl font-black text-white mt-0.5">- 0 m</div>
+                <div class="text-[10px] text-gray-400 font-medium mt-0.5">Cumulative Loss</div>
             </div>
         </div>
 
-        <!-- Map Screen Panel -->
+        <!-- Interactive Elevation Chart Block Layer -->
+        <div class="bg-gray-800 p-3 rounded-xl border border-gray-800 space-y-1.5 shadow-md">
+            <div class="flex justify-between items-center text-[10px] text-gray-400 uppercase font-bold tracking-wider px-1">
+                <span>⛰️ WUU2K Elevation profile loop</span>
+                <span id="chart-hover-stat" class="text-emerald-400 lowercase font-mono font-normal tracking-normal text-xs"></span>
+            </div>
+            <canvas id="elevation-chart"></canvas>
+        </div>
+
+        <!-- Map Layer Container -->
         <div id="map"></div>
 
-        <!-- Checkpoints Data Array Panel -->
+        <!-- Checkpoints Split Presentation Box -->
         <div class="bg-gray-800 p-4 rounded-xl border border-gray-800">
             <h2 class="text-sm font-bold mb-2 border-b border-gray-700 pb-1 text-emerald-400 uppercase tracking-wider">Crew Split Projections</h2>
             <div class="overflow-x-auto">
@@ -113,7 +127,7 @@
                         </tr>
                     </thead>
                     <tbody id="checkpoint-table-body">
-                        <!-- Handled dynamically by javascript updates -->
+                        <!-- Populated dynamically via Javascript routines -->
                     </tbody>
                 </table>
             </div>
@@ -121,7 +135,7 @@
     </div>
 
     <script>
-        // Checkpoint markers
+        // Checkpoint markers array loop constraints
         const aidStations = [
             { name: "Start (Khandallah Park)", dist: 0, lat: -41.2407, lon: 174.7865, difficulty: 1.0 },
             { name: "AS1: Makara Road", dist: 11.5, lat: -41.2778, lon: 174.7247, difficulty: 1.40 }, 
@@ -132,13 +146,9 @@
             { name: "Finish: Hataitai Velodrome", dist: 45.0, lat: -41.3032, lon: 174.7958, difficulty: 1.10 } 
         ];
 
-        // Placeholder fallback path arrays before background file loader completes
-        let courseCoordinates = [
-            [-41.240718, 174.786546], [-41.240795, 174.786510], [-41.240822, 174.786482],
-            [-41.238963, 174.787245], [-41.237562, 174.787052], [-41.235537, 174.780960],
-            [-41.233941, 174.778707], [-41.235842, 174.770513], [-41.238923, 174.763497],
-            [-41.252449, 174.748963], [-41.264514, 174.743843], [-41.277346, 174.728539]
-        ];
+        // Global parsed state store variables
+        let parsedTrackpoints = []; // Stores complete object data {lat, lon, ele, cumulativeDist, ascentToHere, descentToHere}
+        let totalCourseLengthKm = 45.0;
 
         // Initialize Map
         const map = L.map('map', { zoomControl: false }).setView([-41.28, 174.75], 12);
@@ -146,52 +156,93 @@
 
         const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
         const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
-
         L.control.layers({ "Dark Map": darkLayer, "Satellite": satelliteLayer }, null, { position: 'topright' }).addTo(map);
 
         let masterCoursePolyline = null;
         let runningProgressLine = null; 
         let runnerMarker = null;
 
-        function drawMasterCourse() {
-            if (masterCoursePolyline) map.removeLayer(masterCoursePolyline);
-            masterCoursePolyline = L.polyline(courseCoordinates, { color: '#a855f7', weight: 4, opacity: 0.6, dashArray: '4, 6' }).addTo(map);
-        }
-
-        // Automatic Server Background GPX Fetching Function
+        // Server Async Background File Loader
         async function fetchEmbeddedGPX() {
             try {
                 const response = await fetch('./course.gpx');
-                if (!response.ok) throw new Error("File not found inside directory folder asset channels.");
+                if (!response.ok) throw new Error("File missing or case sensitivity blocking link address.");
                 
                 const gpxText = await response.text();
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(gpxText, "text/xml");
                 const trkpts = xmlDoc.getElementsByTagName("trkpt");
-                const points = [];
-
+                
+                let tempPoints = [];
                 for (let i = 0; i < trkpts.length; i++) {
                     const lat = parseFloat(trkpts[i].getAttribute("lat"));
                     const lon = parseFloat(trkpts[i].getAttribute("lon"));
-                    if (!isNaN(lat) && !isNaN(lon)) points.push([lat, lon]);
+                    const eleNode = trkpts[i].getElementsByTagName("ele")[0];
+                    const ele = eleNode ? parseFloat(eleNode.textContent) : 0;
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        tempPoints.push({ lat: lat, lon: lon, ele: ele });
+                    }
                 }
 
-                if (points.length > 0) {
-                    courseCoordinates = points;
-                    drawMasterCourse();
-                    map.fitBounds(masterCoursePolyline.getBounds());
+                if (tempPoints.length > 0) {
+                    processHighResolutionGPXTrack(tempPoints);
                     
                     const statusIndicator = document.getElementById('gpx-status');
                     statusIndicator.innerText = "🎯 GPX Course Loaded";
                     statusIndicator.className = "bg-emerald-950/40 border border-emerald-500/30 rounded-lg px-2.5 py-1 text-[11px] text-emerald-400 font-mono";
-                    
-                    updateSimulation();
                 }
             } catch (err) {
-                console.warn("Could not load internal repo course.gpx automatically. Running layout presets.", err);
+                console.warn("Auto-load of course.gpx bypassed. Please ensure file path matches folder naming parameters perfectly.", err);
                 document.getElementById('gpx-status').innerText = "⚠️ course.gpx missing";
                 document.getElementById('gpx-status').className = "bg-red-950/40 border border-red-500/30 rounded-lg px-2.5 py-1 text-[11px] text-red-400 font-mono";
             }
+        }
+
+        function processHighResolutionGPXTrack(pointsArray) {
+            let distanceAccumulator = 0;
+            let climbAccumulator = 0;
+            let descentAccumulator = 0;
+
+            parsedTrackpoints = pointsArray.map((pt, index) => {
+                if (index === 0) {
+                    return { ...pt, cumulativeDist: 0, ascentToHere: 0, descentToHere: 0 };
+                }
+                
+                const prev = pointsArray[index - 1];
+                const segmentGap = getHaversineDist({lat: prev.lat, lon: prev.lon}, {lat: pt.lat, lon: pt.lon});
+                distanceAccumulator += segmentGap;
+
+                const eleDelta = pt.ele - prev.ele;
+                if (eleDelta > 0) {
+                    climbAccumulator += eleDelta;
+                } else {
+                    descentAccumulator += Math.abs(eleDelta);
+                }
+
+                return {
+                    lat: pt.lat,
+                    lon: pt.lon,
+                    ele: pt.ele,
+                    cumulativeDist: distanceAccumulator,
+                    ascentToHere: climbAccumulator,
+                    descentToHere: descentAccumulator
+                };
+            });
+
+            totalCourseLengthKm = distanceAccumulator;
+
+            // Dynamically scale manual input slider boundaries to mirror true file distances
+            const slider = document.getElementById('input-distance-slider');
+            slider.max = totalCourseLengthKm.toFixed(2);
+            document.getElementById('input-distance-text').max = totalCourseLengthKm.toFixed(2);
+
+            // Re-render baseline geometries
+            if (masterCoursePolyline) map.removeLayer(masterCoursePolyline);
+            masterCoursePolyline = L.polyline(parsedTrackpoints.map(pt => [pt.lat, pt.lon]), { color: '#a855f7', weight: 4, opacity: 0.6, dashArray: '4, 6' }).addTo(map);
+            map.fitBounds(masterCoursePolyline.getBounds());
+
+            drawElevationChartCanvas();
+            updateSimulation();
         }
 
         function syncDistanceInputs(source) {
@@ -199,57 +250,36 @@
             const text = document.getElementById('input-distance-text');
             
             if (source === 'slider') {
-                text.value = parseFloat(slider.value).toFixed(1);
+                text.value = parseFloat(slider.value).toFixed(2);
             } else {
                 let val = parseFloat(text.value);
                 if (isNaN(val)) val = 0;
-                if (val > 45) val = 45;
+                if (val > totalCourseLengthKm) val = totalCourseLengthKm;
                 if (val < 0) val = 0;
                 slider.value = val;
             }
             updateSimulation();
         }
 
-        function getCoordinatesAtDistance(targetKm) {
-            let totalKm = 0;
-            if (targetKm <= 0) return courseCoordinates[0];
-            
-            for (let i = 1; i < courseCoordinates.length; i++) {
-                const p1 = { lat: courseCoordinates[i-1][0], lon: courseCoordinates[i-1][1] };
-                const p2 = { lat: courseCoordinates[i][0], lon: courseCoordinates[i][1] };
-                const segKm = getHaversineDist(p1, p2);
-                
-                if (totalKm + segKm >= targetKm) {
-                    const ratio = (targetKm - totalKm) / segKm;
-                    return [p1.lat + (p2.lat - p1.lat) * ratio, p1.lon + (p2.lon - p1.lon) * ratio];
-                }
-                totalKm += segKm;
-            }
-            return courseCoordinates[courseCoordinates.length - 1];
-        }
+        // Returns interpolated details closest to current user slider distance choice
+        function getStateMetricAtDistance(targetKm) {
+            if (parsedTrackpoints.length === 0) return null;
+            if (targetKm <= 0) return parsedTrackpoints[0];
 
-        function getProgressCoordinates(targetKm) {
-            let totalKm = 0;
-            const progressPath = [courseCoordinates[0]];
-            
-            for (let i = 1; i < courseCoordinates.length; i++) {
-                const p1 = { lat: courseCoordinates[i-1][0], lon: courseCoordinates[i-1][1] };
-                const p2 = { lat: courseCoordinates[i][0], lon: courseCoordinates[i][1] };
-                const segKm = getHaversineDist(p1, p2);
-                
-                if (totalKm + segKm >= targetKm) {
-                    progressPath.push(getCoordinatesAtDistance(targetKm));
-                    break;
+            for (let i = 1; i < parsedTrackpoints.length; i++) {
+                if (parsedTrackpoints[i].cumulativeDist >= targetKm) {
+                    return parsedTrackpoints[i]; 
                 }
-                progressPath.push(courseCoordinates[i]);
-                totalKm += segKm;
             }
-            return progressPath;
+            return parsedTrackpoints[parsedTrackpoints.length - 1];
         }
 
         function updateSimulation() {
+            if (parsedTrackpoints.length === 0) return;
+
             const paceStr = document.getElementById('input-pace').value.trim();
             const currentDistKm = parseFloat(document.getElementById('input-distance-slider').value);
+            document.getElementById('slider-val').innerText = `${currentDistKm.toFixed(2)} km`;
 
             const paceParts = paceStr.split(':');
             const decimalPace = parseFloat(paceParts[0]) + (parseFloat(paceParts[1] || 0) / 60);
@@ -265,23 +295,182 @@
             const raceStartMs = new Date().setHours(hour24, mins, 0, 0);
             const currentRaceTimeMs = raceStartMs + (totalElapsedMins * 60000);
 
-            document.getElementById('stat-distance').innerText = `${currentDistKm.toFixed(2)} km`;
-            document.getElementById('stat-time').innerText = formatHoursMinutes(totalElapsedMins);
-            document.getElementById('stat-pace').innerText = `${paceStr} /km`;
-            document.getElementById('stat-current-time').innerText = new Date(currentRaceTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            // Fetch metrics matching simulated checkpoint marker position
+            const activeMetricsState = getStateMetricAtDistance(currentDistKm);
 
-            if (runningProgressLine) map.removeLayer(runningProgressLine);
-            if (currentDistKm > 0) {
-                runningProgressLine = L.polyline(getProgressCoordinates(currentDistKm), { color: '#0ea5e9', weight: 5, opacity: 1 }).addTo(map);
+            if (activeMetricsState) {
+                document.getElementById('stat-distance').innerText = `${currentDistKm.toFixed(2)} km`;
+                document.getElementById('stat-altitude-current').innerText = `Alt: ${Math.round(activeMetricsState.ele)} m`;
+                document.getElementById('stat-time').innerText = formatHoursMinutes(totalElapsedMins);
+                document.getElementById('stat-pace').innerText = `${paceStr} /km`;
+                document.getElementById('stat-climb-ascent').innerText = `+ ${Math.round(activeMetricsState.ascentToHere)} m`;
+                document.getElementById('stat-climb-descent').innerText = `- ${Math.round(activeMetricsState.descentToHere)} m`;
+                document.getElementById('stat-current-time').innerText = new Date(currentRaceTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                // Render dynamic track progress overlay lines over background paths
+                if (runningProgressLine) map.removeLayer(runningProgressLine);
+                const completeProgressCoordinates = parsedTrackpoints
+                    .filter(pt => pt.cumulativeDist <= currentDistKm)
+                    .map(pt => [pt.lat, pt.lon]);
+                
+                // Keep progress marker cleanly synced to exact interpolation positions
+                completeProgressCoordinates.push([activeMetricsState.lat, activeMetricsState.lon]);
+
+                runningProgressLine = L.polyline(completeProgressCoordinates, { color: '#0ea5e9', weight: 5, opacity: 1, lineJoin: 'round' }).addTo(map);
+
+                if (runnerMarker) map.removeLayer(runnerMarker);
+                runnerMarker = L.marker([activeMetricsState.lat, activeMetricsState.lon], {
+                    icon: L.divIcon({ className: 'pulsing-runner', iconSize: [12, 12], iconAnchor: [6, 6] })
+                }).addTo(map);
             }
 
-            const currentPos = getCoordinatesAtDistance(currentDistKm);
-            if (runnerMarker) map.removeLayer(runnerMarker);
-            runnerMarker = L.marker(currentPos, {
-                icon: L.divIcon({ className: 'pulsing-runner', iconSize: [12, 12], iconAnchor: [6, 6] })
-            }).addTo(map);
-
+            drawElevationChartCanvas(currentDistKm);
             calculateTableProjections(currentDistKm, decimalPace, raceStartMs);
+        }
+
+        // Native HTML5 Canvas Profile Renderer
+        function drawElevationChartCanvas(activeKm = 0) {
+            const canvas = document.getElementById('elevation-chart');
+            if (!canvas || parsedTrackpoints.length === 0) return;
+
+            const ctx = canvas.getContext('2d');
+            
+            // Re-normalize layout bounds to manage sharp retina display boundaries natively
+            const width = canvas.clientWidth;
+            const height = canvas.clientHeight;
+            if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+            }
+
+            ctx.clearRect(0, 0, width, height);
+
+            // Establish coordinate mapping scaling margins
+            const paddingLeft = 35;
+            const paddingRight = 15;
+            const paddingTop = 15;
+            const paddingBottom = 20;
+
+            const chartWidth = width - paddingLeft - paddingRight;
+            const chartHeight = height - paddingTop - paddingBottom;
+
+            // Extract core array metrics boundaries
+            const elevations = parsedTrackpoints.map(pt => pt.ele);
+            const minEle = Math.min(...elevations);
+            const maxEle = Math.max(...elevations);
+            const elevationRange = maxEle - minEle || 1;
+
+            // Coordinate translation helper layout map routines
+            function getX(km) {
+                return paddingLeft + (km / totalCourseLengthKm) * chartWidth;
+            }
+            function getY(ele) {
+                return height - paddingBottom - ((ele - minEle) / elevationRange) * chartHeight;
+            }
+
+            // Draw clean background horizontal reference guideline grids
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            ctx.fillStyle = '#64748b';
+            ctx.font = '9px monospace';
+            ctx.textBaseline = 'middle';
+
+            const gridLinesCount = 3;
+            for (let i = 0; i <= gridLinesCount; i++) {
+                const targetEleVal = minEle + (elevationRange * (i / gridLinesCount));
+                const yPos = getY(targetEleVal);
+                
+                ctx.beginPath();
+                ctx.moveTo(paddingLeft, yPos);
+                ctx.lineTo(width - paddingRight, yPos);
+                ctx.stroke();
+
+                ctx.fillText(`${Math.round(targetEleVal)}m`, 5, yPos);
+            }
+
+            // Draw full winding chart layout terrain polygon path
+            ctx.beginPath();
+            ctx.moveTo(getX(0), height - paddingBottom);
+            
+            parsedTrackpoints.forEach(pt => {
+                ctx.lineTo(getX(pt.cumulativeDist), getY(pt.ele));
+            });
+            
+            ctx.lineTo(getX(totalCourseLengthKm), height - paddingBottom);
+            ctx.closePath();
+
+            // Fill background gradients under course peaks beautifully
+            const gradient = ctx.createLinearGradient(0, paddingTop, 0, height - paddingBottom);
+            gradient.addColorStop(0, '#a855f740');
+            gradient.addColorStop(1, '#a855f705');
+            ctx.fillStyle = gradient;
+            ctx.fill();
+
+            // Outline top profile line stroke track vector lines
+            ctx.beginPath();
+            parsedTrackpoints.forEach((pt, idx) => {
+                if (idx === 0) ctx.moveTo(getX(pt.cumulativeDist), getY(pt.ele));
+                else ctx.lineTo(getX(pt.cumulativeDist), getY(pt.ele));
+            });
+            ctx.strokeStyle = '#a855f7';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+
+            // Draw Completed Section Shadow Overlay Path Color fills
+            if (activeKm > 0) {
+                ctx.beginPath();
+                ctx.moveTo(getX(0), height - paddingBottom);
+                for (let i = 0; i < parsedTrackpoints.length; i++) {
+                    if (parsedTrackpoints[i].cumulativeDist > activeKm) break;
+                    ctx.lineTo(getX(parsedTrackpoints[i].cumulativeDist), getY(parsedTrackpoints[i].ele));
+                }
+                const activeMarkerX = getX(activeKm);
+                const activeStateMetrics = getStateMetricAtDistance(activeKm);
+                
+                if (activeStateMetrics) {
+                    ctx.lineTo(activeMarkerX, getY(activeStateMetrics.ele));
+                }
+                ctx.lineTo(activeMarkerX, height - paddingBottom);
+                ctx.closePath();
+
+                const activeGradient = ctx.createLinearGradient(0, paddingTop, 0, height - paddingBottom);
+                activeGradient.addColorStop(0, '#0ea5e950');
+                activeGradient.addColorStop(1, '#0ea5e905');
+                ctx.fillStyle = activeGradient;
+                ctx.fill();
+
+                // Plot bright blue line matching tracked ground bounds
+                ctx.beginPath();
+                for (let i = 0; i < parsedTrackpoints.length; i++) {
+                    if (parsedTrackpoints[i].cumulativeDist > activeKm) break;
+                    if (i === 0) ctx.moveTo(getX(0), getY(parsedTrackpoints[0].ele));
+                    else ctx.lineTo(getX(parsedTrackpoints[i].cumulativeDist), getY(parsedTrackpoints[i].ele));
+                }
+                ctx.strokeStyle = '#0ea5e9';
+                ctx.lineWidth = 2.5;
+                ctx.stroke();
+
+                // Draw pulsing vertical indicator block row lines intersecting chart space
+                if (activeStateMetrics) {
+                    const runnerChartY = getY(activeStateMetrics.ele);
+                    
+                    ctx.beginPath();
+                    ctx.arc(activeMarkerX, runnerChartY, 5, 0, 2 * Math.PI);
+                    ctx.fillStyle = '#22c55e';
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1.5;
+                    ctx.fill();
+                    ctx.stroke();
+                }
+            }
+
+            // Render bottom axis distance labels
+            ctx.fillStyle = '#64748b';
+            ctx.textBaseline = 'top';
+            ctx.textAlign = 'center';
+            for (let km = 0; km <= totalCourseLengthKm; km += 10) {
+                ctx.fillText(`${km}k`, getX(km), height - paddingBottom + 5);
+            }
         }
 
         function calculateTableProjections(currentDistKm, decimalPace, raceStartMs) {
@@ -297,8 +486,7 @@
 
                 if (currentDistKm >= as.dist) {
                     statusClass = "text-gray-500 line-through font-normal";
-                    const historicalTimeMs = raceStartMs + (as.dist * decimalPace * 60000);
-                    timeDisplay = new Date(historicalTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    timeDisplay = new Date(raceStartMs + (as.dist * decimalPace * 60000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 } else {
                     const segmentGap = as.dist - forwardReferenceDist;
                     rollingTimeMs += segmentGap * (decimalPace * as.difficulty) * 60000;
@@ -333,18 +521,18 @@
             `).join('');
         }
 
+        // Fixed bug: Removed broken 'Nice =' code breaking internal math calculations entirely
         function getHaversineDist(pt1, pt2) {
             const R = 6371; 
             const dLat = (pt2.lat - pt1.lat) * Math.PI / 180;
             const dLon = (pt2.lon - pt1.lon) * Math.PI / 180;
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                       Math.cos(pt1.lat * Math.PI / 180) * Math.cos(pt2.lat * Math.PI / 180) * 
-                      Nice = Math.sin(dLon/2) * dLon/2;
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
             return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
         }
 
         document.addEventListener("DOMContentLoaded", () => {
-            drawMasterCourse();
             initializeTableVisuals();
             fetchEmbeddedGPX();
         });
