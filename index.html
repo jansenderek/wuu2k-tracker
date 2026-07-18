@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>WUU2K 45km Demo Tracker</title>
+    <title>WUU2K 45km Crew Simulator</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <!-- Leaflet CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        #map { height: 420px; border-radius: 0.75rem; }
+        #map { height: 440px; border-radius: 0.75rem; }
         .pulsing-runner {
             background: #22c55e;
             border-radius: 50%;
@@ -32,10 +32,10 @@
         <div class="flex items-center justify-between border-b border-gray-800 pb-3">
             <div>
                 <h1 class="text-xl font-black text-emerald-400 tracking-tight">WUU2K 45KM DEMO TRACKER</h1>
-                <p class="text-gray-400 text-xs">Manual Pace Simulator</p>
+                <p class="text-gray-400 text-xs">High-Precision Course Simulator</p>
             </div>
-            <button onclick="document.getElementById('gpx-file-input').click()" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition shadow-md">
-                🗺️ Load GPX
+            <button onclick="document.getElementById('gpx-file-input').click()" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition shadow-md cursor-pointer">
+                🗺️ Load Full GPX
             </button>
             <input type="file" id="gpx-file-input" accept=".gpx" class="hidden" onchange="loadGPXFile(event)">
         </div>
@@ -45,18 +45,34 @@
             <span class="font-black text-amber-400 text-xs block uppercase tracking-wider">⚙️ Simulation Controls</span>
             
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <!-- Pace Input -->
                 <div>
                     <label class="block text-gray-400 font-bold mb-1">Average Pace (min/km):</label>
-                    <input type="text" id="input-pace" class="w-full bg-gray-950 border border-gray-700 rounded-lg p-2 font-mono text-emerald-400 font-bold text-center text-sm" value="8:30" onchange="updateSimulation()">
+                    <input type="text" id="input-pace" class="w-full bg-gray-950 border border-gray-700 rounded-lg p-2 font-mono text-emerald-400 font-bold text-center text-sm focus:outline-none focus:border-emerald-500" value="8:30" onchange="updateSimulation()">
                 </div>
+                
+                <!-- Enhanced Start Time Inputs -->
                 <div>
                     <label class="block text-gray-400 font-bold mb-1">Race Start Time:</label>
-                    <input type="time" id="input-start-time" class="w-full bg-gray-950 border border-gray-700 rounded-lg p-2 font-mono text-white text-center text-sm" value="07:00" onchange="updateSimulation()">
+                    <div class="flex gap-1">
+                        <input type="number" id="start-hour" min="1" max="12" value="7" class="w-1/3 bg-gray-950 border border-gray-700 rounded-lg p-2 font-mono text-white text-center text-sm focus:outline-none focus:border-emerald-500" onchange="updateSimulation()">
+                        <span class="text-xl font-bold self-center text-gray-600">:</span>
+                        <input type="number" id="start-minute" min="0" max="59" value="00" class="w-1/3 bg-gray-950 border border-gray-700 rounded-lg p-2 font-mono text-white text-center text-sm focus:outline-none focus:border-emerald-500" onchange="updateSimulation()">
+                        <select id="start-ampm" class="w-1/3 bg-gray-950 border border-gray-700 rounded-lg p-2 font-mono text-amber-400 font-bold text-center text-sm focus:outline-none focus:border-emerald-500 cursor-pointer" onchange="updateSimulation()">
+                            <option value="AM" selected>AM</option>
+                            <option value="PM">PM</option>
+                        </select>
+                    </div>
                 </div>
+
+                <!-- Dual Distance Inputs -->
                 <div>
-                    <label class="block text-gray-400 font-bold mb-1">Distance Covered: <span id="slider-val" class="text-emerald-400 font-mono font-bold">12.00 km</span></label>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-gray-400 font-bold">Distance Covered:</label>
+                        <input type="number" id="input-distance-text" min="0" max="45" step="0.1" value="12.0" class="w-20 bg-gray-950 border border-gray-700 rounded-md p-1 font-mono text-emerald-400 font-bold text-center text-xs focus:outline-none focus:border-emerald-500" oninput="syncDistanceInputs('text')">
+                    </div>
                     <div class="pt-2">
-                        <input type="range" id="input-distance" min="0" max="45" step="0.1" value="12" class="w-full h-2 bg-gray-950 rounded-lg appearance-none cursor-pointer accent-emerald-400" oninput="updateSimulation()">
+                        <input type="range" id="input-distance-slider" min="0" max="45" step="0.05" value="12" class="w-full h-2 bg-gray-950 rounded-lg appearance-none cursor-pointer accent-emerald-400" oninput="syncDistanceInputs('slider')">
                     </div>
                 </div>
             </div>
@@ -73,12 +89,12 @@
                 <div id="stat-time" class="text-xl font-black text-white mt-0.5">-- mins</div>
             </div>
             <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-800/50">
-                <div class="text-[10px] text-gray-400 font-bold uppercase">Avg Pace</div>
-                <div id="stat-pace" class="text-xl font-black text-white mt-0.5">-- /km</div>
+                <div class="text-[10px] text-gray-400 font-bold uppercase">Current Time</div>
+                <div id="stat-current-time" class="text-xl font-black text-amber-400 mt-0.5">--:--</div>
             </div>
             <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-800/50">
-                <div class="text-[10px] text-gray-400 font-bold uppercase">Status</div>
-                <div id="stat-updated" class="text-sm font-black text-amber-400 mt-1">Demo Mode</div>
+                <div class="text-[10px] text-gray-400 font-bold uppercase">Avg Pace</div>
+                <div id="stat-pace" class="text-xl font-black text-white mt-0.5">-- /km</div>
             </div>
         </div>
 
@@ -106,20 +122,20 @@
     </div>
 
     <script>
-        // Checkpoint markers
+        // Checkpoint markers - AS3 corrected to 27.2km
         const aidStations = [
             { name: "Start (Khandallah Park)", dist: 0, lat: -41.2407, lon: 174.7865, difficulty: 1.0 },
             { name: "AS1: Makara Road", dist: 11.5, lat: -41.2778, lon: 174.7247, difficulty: 1.40 }, 
             { name: "AS2: Makara MB Park", dist: 17.5, lat: -41.2942, lon: 174.7292, difficulty: 1.20 }, 
-            { name: "AS3: Brooklyn Turbine", dist: 25.0, lat: -41.3122, lon: 174.7257, difficulty: 1.30 }, 
+            { name: "AS3: Brooklyn Turbine", dist: 27.2, lat: -41.3122, lon: 174.7257, difficulty: 1.30 }, // Fixed to 27.2km
             { name: "AS4: Tawatawa Ent.", dist: 34.0, lat: -41.3276, lon: 174.7667, difficulty: 1.05 }, 
             { name: "AS5: Mt Albert Wall", dist: 39.0, lat: -41.3317, lon: 174.7866, difficulty: 1.35 }, 
             { name: "Finish: Hataitai Velodrome", dist: 45.0, lat: -41.3032, lon: 174.7958, difficulty: 1.10 } 
         ];
 
-        // Default track coordinates fallback trace layout bounds
+        // Default layout reference line mapping track coordinates
         let courseCoordinates = [
-            [-41.240718, 174.786546], [-41.240795, 174.786509], [-41.240822, 174.786482],
+            [-41.240718, 174.786546], [-41.240795, 174.786510], [-41.240822, 174.786482],
             [-41.238963, 174.787245], [-41.237562, 174.787052], [-41.235537, 174.780960],
             [-41.233941, 174.778707], [-41.235842, 174.770513], [-41.238923, 174.763497],
             [-41.252449, 174.748963], [-41.264514, 174.743843], [-41.277346, 174.728539],
@@ -127,7 +143,7 @@
             [-41.331700, 174.786600], [-41.303200, 174.795800]
         ];
 
-        // Map Setup
+        // Initialize Map Elements
         const map = L.map('map', { zoomControl: false }).setView([-41.28, 174.75], 12);
         L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
@@ -145,7 +161,7 @@
             masterCoursePolyline = L.polyline(courseCoordinates, { color: '#a855f7', weight: 4, opacity: 0.6, dashArray: '4, 6' }).addTo(map);
         }
 
-        // Parse GPX text files uploaded dynamically
+        // Live GPX parsing engine update hook
         function loadGPXFile(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -167,12 +183,29 @@
                         map.fitBounds(masterCoursePolyline.getBounds());
                         updateSimulation();
                     }
-                } catch (err) { alert("GPX file compilation error."); }
+                } catch (err) { alert("Error compiling internal GPX coordinates."); }
             };
             reader.readAsText(file);
         }
 
-        // Distance-based interpolation math mapping coords to trail lines
+        // Synchronize Slider Bar and Text Box inputs seamlessly
+        function syncDistanceInputs(source) {
+            const slider = document.getElementById('input-distance-slider');
+            const text = document.getElementById('input-distance-text');
+            
+            if (source === 'slider') {
+                text.value = parseFloat(slider.value).toFixed(1);
+            } else {
+                let val = parseFloat(text.value);
+                if (isNaN(val)) val = 0;
+                if (val > 45) val = 45;
+                if (val < 0) val = 0;
+                slider.value = val;
+            }
+            updateSimulation();
+        }
+
+        // Interpolate distance along coordinates safely
         function getCoordinatesAtDistance(targetKm) {
             let totalKm = 0;
             if (targetKm <= 0) return courseCoordinates[0];
@@ -184,9 +217,7 @@
                 
                 if (totalKm + segKm >= targetKm) {
                     const ratio = (targetKm - totalKm) / segKm;
-                    const resLat = p1.lat + (p2.lat - p1.lat) * ratio;
-                    const resLon = p1.lon + (p2.lon - p1.lon) * ratio;
-                    return [resLat, resLon];
+                    return [p1.lat + (p2.lat - p1.lat) * ratio, p1.lon + (p2.lon - p1.lon) * ratio];
                 }
                 totalKm += segKm;
             }
@@ -214,17 +245,30 @@
 
         function updateSimulation() {
             const paceStr = document.getElementById('input-pace').value.trim();
-            const currentDistKm = parseFloat(document.getElementById('input-distance').value);
-            document.getElementById('slider-val').innerText = `${currentDistKm.toFixed(2)} km`;
+            const currentDistKm = parseFloat(document.getElementById('input-distance-slider').value);
 
             const paceParts = paceStr.split(':');
             const decimalPace = parseFloat(paceParts[0]) + (parseFloat(paceParts[1] || 0) / 60);
             const totalElapsedMins = Math.round(currentDistKm * decimalPace);
 
-            document.getElementById('stat-distance').innerText = `${currentDistKm.toFixed(2)} km`;
-            document.getElementById('stat-time').innerText = `${totalElapsedMins} mins`;
-            document.getElementById('stat-pace').innerText = `${paceStr} /km`;
+            // Construct 24hr millisecond timestamp from split inputs safely
+            let hour24 = parseInt(document.getElementById('start-hour').value);
+            const mins = parseInt(document.getElementById('start-minute').value);
+            const ampm = document.getElementById('start-ampm').value;
 
+            if (ampm === "PM" && hour24 < 12) hour24 += 12;
+            if (ampm === "AM" && hour24 === 12) hour24 = 0;
+
+            const raceStartMs = new Date().setHours(hour24, mins, 0, 0);
+            const currentRaceTimeMs = raceStartMs + (totalElapsedMins * 60000);
+
+            // Update UI Card Metric Displays
+            document.getElementById('stat-distance').innerText = `${currentDistKm.toFixed(2)} km`;
+            document.getElementById('stat-time').innerText = formatHoursMinutes(totalElapsedMins);
+            document.getElementById('stat-pace').innerText = `${paceStr} /km`;
+            document.getElementById('stat-current-time').innerText = new Date(currentRaceTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            // Redraw Map Vectors
             if (runningProgressLine) map.removeLayer(runningProgressLine);
             if (currentDistKm > 0) {
                 runningProgressLine = L.polyline(getProgressCoordinates(currentDistKm), { color: '#0ea5e9', weight: 5, opacity: 1 }).addTo(map);
@@ -236,17 +280,13 @@
                 icon: L.divIcon({ className: 'pulsing-runner', iconSize: [12, 12], iconAnchor: [6, 6] })
             }).addTo(map);
 
-            calculateDemoTableTimes(currentDistKm, decimalPace);
+            calculateTableProjections(currentDistKm, decimalPace, raceStartMs);
         }
 
-        function calculateDemoTableTimes(currentDistKm, decimalPace) {
+        function calculateTableProjections(currentDistKm, decimalPace, raceStartMs) {
             const tbody = document.getElementById('checkpoint-table-body');
             tbody.innerHTML = '';
 
-            const startTimeStr = document.getElementById('input-start-time').value;
-            const startParts = startTimeStr.split(':');
-            const raceStartMs = new Date().setHours(parseInt(startParts[0]), parseInt(startParts[1]), 0, 0);
-            
             let rollingTimeMs = raceStartMs + (currentDistKm * decimalPace * 60000);
             let forwardReferenceDist = currentDistKm;
 
@@ -256,7 +296,8 @@
 
                 if (currentDistKm >= as.dist) {
                     statusClass = "text-gray-500 line-through font-normal";
-                    timeDisplay = new Date(raceStartMs + (as.dist * decimalPace * 60000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    const historicalTimeMs = raceStartMs + (as.dist * decimalPace * 60000);
+                    timeDisplay = new Date(historicalTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 } else {
                     const segmentGap = as.dist - forwardReferenceDist;
                     rollingTimeMs += segmentGap * (decimalPace * as.difficulty) * 60000;
@@ -272,6 +313,13 @@
                     </tr>
                 `;
             });
+        }
+
+        // Formats numerical minutes cleanly into hours:minutes output text strings
+        function formatHoursMinutes(totalMinutes) {
+            const h = Math.floor(totalMinutes / 60);
+            const m = totalMinutes % 60;
+            return `${h}:${m.toString().padStart(2, '0')}`;
         }
 
         function getHaversineDist(pt1, pt2) {
