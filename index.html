@@ -39,7 +39,7 @@
                 <div id="gpx-status" class="bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1 text-[11px] text-amber-400 font-mono">
                     ⏳ Loading course.gpx...
                 </div>
-                <button onclick="document.getElementById('manual-gpx-load').click()" class="px-2 py-1 bg-purple-900/60 hover:bg-purple-800 border border-purple-500/40 text-purple-300 text-[10px] font-bold rounded transition">
+                <button onclick="document.getElementById('manual-gpx-load').click()" class="px-2 py-1 bg-purple-900/60 hover:bg-purple-800 border border-purple-500/40 text-purple-300 text-[10px] font-bold rounded transition cursor-pointer">
                     Backup Upload
                 </button>
                 <input type="file" id="manual-gpx-load" accept=".gpx" class="hidden" onchange="handleManualUpload(event)">
@@ -141,15 +141,16 @@
     </div>
 
     <script>
-        const aidStations = [
-            { name: "Start (Khandallah Park)", dist: 0, lat: -41.2407, lon: 174.7865, difficulty: 1.0 },
-            { name: "AS1: Makara Road", dist: 11.5, lat: -41.2778, lon: 174.7247, difficulty: 1.40 }, 
-            { name: "AS2: Makara MB Park", dist: 17.5, lat: -41.2942, lon: 174.7292, difficulty: 1.20 }, 
-            { name: "AS3: Brooklyn Turbine", dist: 27.2, lat: -41.3122, lon: 174.7257, difficulty: 1.30 }, 
-            { name: "AS4: Tawatawa Ent.", dist: 34.0, lat: -41.3276, lon: 174.7667, difficulty: 1.05 }, 
-            { name: "AS5: Mt Albert Wall", dist: 39.0, lat: -41.3317, lon: 174.7866, difficulty: 1.35 }, 
-            { name: "Finish: Hataitai Velodrome", dist: 45.0, lat: -41.3032, lon: 174.7958, difficulty: 1.10 } 
-        ];
+        // High-precision distance tracking equation
+        function getHaversineDist(pt1, pt2) {
+            const R = 6371; 
+            const dLat = (pt2.lat - pt1.lat) * Math.PI / 180;
+            const dLon = (pt2.lon - pt1.lon) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(pt1.lat * Math.PI / 180) * Math.cos(pt2.lat * Math.PI / 180) * 
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+        }
 
         let parsedTrackpoints = []; 
         let totalCourseLengthKm = 45.0;
@@ -171,45 +172,51 @@
             masterCoursePolyline = L.polyline(parsedTrackpoints.map(pt => [pt.lat, pt.lon]), { color: '#a855f7', weight: 4, opacity: 0.6, dashArray: '4, 6' }).addTo(map);
         }
 
-        // Parse GPX text contents directly
+        // Clean and scrub GPX elements safely
         function parseGPXText(gpxText) {
-            const parser = new DOMParser();
-            const xmlDoc = parser.parseFromString(gpxText, "text/xml");
-            const trkpts = xmlDoc.getElementsByTagName("trkpt");
-            
-            let tempPoints = [];
-            for (let i = 0; i < trkpts.length; i++) {
-                const lat = parseFloat(trkpts[i].getAttribute("lat"));
-                const lon = parseFloat(trkpts[i].getAttribute("lon"));
-                const eleNode = trkpts[i].getElementsByTagName("ele")[0];
-                let ele = eleNode ? parseFloat(eleNode.textContent) : 0;
-                if (!isNaN(lat) && !isNaN(lon)) {
-                    tempPoints.push({ lat: lat, lon: lon, ele: ele });
-                }
-            }
-
-            if (tempPoints.length > 0) {
-                // Scrub out dropouts to 0m (smooths chart tracking lines)
-                let lastValidEle = tempPoints.find(p => p.ele > 5)?.ele || 200;
-                tempPoints.forEach(pt => {
-                    if (pt.ele <= 5 || isNaN(pt.ele)) {
-                        pt.ele = lastValidEle;
-                    } else {
-                        lastValidEle = pt.ele;
+            try {
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(gpxText, "text/xml");
+                const trkpts = xmlDoc.getElementsByTagName("trkpt");
+                
+                let tempPoints = [];
+                for (let i = 0; i < trkpts.length; i++) {
+                    const lat = parseFloat(trkpts[i].getAttribute("lat"));
+                    const lon = parseFloat(trkpts[i].getAttribute("lon"));
+                    const eleNode = trkpts[i].getElementsByTagName("ele")[0];
+                    let ele = eleNode ? parseFloat(eleNode.textContent) : 0;
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        tempPoints.push({ lat: lat, lon: lon, ele: ele });
                     }
-                });
+                }
 
-                processHighResolutionGPXTrack(tempPoints);
-                return true;
+                if (tempPoints.length > 0) {
+                    // Smart Topo Filtering (Cleans bad 0m watch errors & wild tracking spikes)
+                    let lastValidEle = tempPoints.find(p => p.ele > 5)?.ele || 199;
+                    tempPoints.forEach((pt, idx) => {
+                        if (pt.ele <= 5 || isNaN(pt.ele)) {
+                            pt.ele = lastValidEle;
+                        } else if (idx > 0 && Math.abs(pt.ele - lastValidEle) > 30) {
+                            // If a jump of >30m happens instantly, suppress it as raw GPS jitter noise
+                            pt.ele = lastValidEle;
+                        } else {
+                            lastValidEle = pt.ele;
+                        }
+                    });
+
+                    processHighResolutionGPXTrack(tempPoints);
+                    return true;
+                }
+            } catch (e) {
+                console.error("GPX parse execution error", e);
             }
             return false;
         }
 
-        // Automatic Background Loader Hook
         async function fetchEmbeddedGPX() {
             try {
                 const response = await fetch('./course.gpx');
-                if (!response.ok) throw new Error("404 missing path folder asset layout rules.");
+                if (!response.ok) throw new Error("404 network fetch error.");
                 const gpxText = await response.text();
                 
                 if (parseGPXText(gpxText)) {
@@ -218,13 +225,12 @@
                     statusIndicator.className = "bg-emerald-950/40 border border-emerald-500/30 rounded-lg px-2.5 py-1 text-[11px] text-emerald-400 font-mono";
                 }
             } catch (err) {
-                console.warn("Auto-fetch encountered an error. Ready for local backup usage.", err);
+                console.warn("Auto-fetch standing by.", err);
                 document.getElementById('gpx-status').innerText = "⚠️ course.gpx initialization pending";
-                document.getElementById('gpx-status').className = "bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1 text-[11px] text-amber-500 font-mono";
+                document.getElementById('gpx-status').className = "bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1 text-[11px] text-amber-400 font-mono";
             }
         }
 
-        // Manual upload backup feature route execution handlers
         function handleManualUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -339,7 +345,12 @@
                 document.getElementById('stat-pace').innerText = `${paceStr} /km`;
                 document.getElementById('stat-climb-ascent').innerText = `+ ${Math.round(activeMetricsState.ascentToHere)} m`;
                 document.getElementById('stat-climb-descent').innerText = `- ${Math.round(activeMetricsState.descentToHere)} m`;
-                document.getElementById('stat-current-time').innerText = new Date(currentRaceTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                let timeStr = "--:--";
+                try {
+                    timeStr = new Date(currentRaceTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                } catch(e) {}
+                document.getElementById('stat-current-time').innerText = "Clock: " + timeStr;
 
                 if (runningProgressLine) map.removeLayer(runningProgressLine);
                 const completeProgressCoordinates = parsedTrackpoints
@@ -424,7 +435,7 @@
             ctx.fillStyle = gradient;
             ctx.fill();
 
-            // Render Core Trarail Plot Line
+            // Render Core Trail Plot Line
             ctx.beginPath();
             parsedTrackpoints.forEach((pt, idx) => {
                 if (idx === 0) ctx.moveTo(getX(pt.cumulativeDist), getY(pt.ele));
@@ -495,11 +506,16 @@
 
                 if (currentDistKm >= as.dist) {
                     statusClass = "text-gray-500 line-through font-normal";
-                    timeDisplay = new Date(raceStartMs + (as.dist * decimalPace * 60000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    const historicalTimeMs = raceStartMs + (as.dist * decimalPace * 60000);
+                    let timeSegmentStr = "--:--";
+                    try { timeSegmentStr = new Date(historicalTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch(e) {}
+                    timeDisplay = timeSegmentStr;
                 } else {
                     const segmentGap = as.dist - forwardReferenceDist;
                     rollingTimeMs += segmentGap * (decimalPace * as.difficulty) * 60000;
-                    timeDisplay = `~ ${new Date(rollingTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                    let timeSegmentStr = "--:--";
+                    try { timeSegmentStr = new Date(rollingTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch(e) {}
+                    timeDisplay = `~ ${timeSegmentStr}`;
                     forwardReferenceDist = as.dist;
                 }
 
@@ -528,17 +544,6 @@
                     <td class="py-2 text-right font-mono text-gray-600 italic">awaiting trace load...</td>
                 </tr>
             `).join('');
-        }
-
-        // Cleaned mathematical parsing logic layout bounds calculations
-        function getHaversineDist(pt1, pt2) {
-            const R = 6371; 
-            const dLat = (pt2.lat - pt1.lat) * Math.PI / 180;
-            const dLon = (pt2.lon - pt1.lon) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(pt1.lat * Math.PI / 180) * Math.cos(pt2.lat * Math.PI / 180) * 
-                      Math.sin(dLon/2) * Math.sin(dLon/2);
-            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
         }
 
         document.addEventListener("DOMContentLoaded", () => {
