@@ -35,8 +35,14 @@
                 <h1 class="text-xl font-black text-emerald-400 tracking-tight">WUU2K 45KM SIMULATOR</h1>
                 <p class="text-gray-400 text-xs">High-Precision Topo Profile Tracking Engine</p>
             </div>
-            <div id="gpx-status" class="bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1 text-[11px] text-amber-400 font-mono">
-                ⏳ Loading course.gpx...
+            <div class="flex items-center gap-2">
+                <div id="gpx-status" class="bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1 text-[11px] text-amber-400 font-mono">
+                    ⏳ Loading course.gpx...
+                </div>
+                <button onclick="document.getElementById('manual-gpx-load').click()" class="px-2 py-1 bg-purple-900/60 hover:bg-purple-800 border border-purple-500/40 text-purple-300 text-[10px] font-bold rounded transition">
+                    Backup Upload
+                </button>
+                <input type="file" id="manual-gpx-load" accept=".gpx" class="hidden" onchange="handleManualUpload(event)">
             </div>
         </div>
 
@@ -65,7 +71,7 @@
                     </div>
                 </div>
 
-                <!-- Distance Control Row -->
+                <!-- Distance Control -->
                 <div>
                     <div class="flex justify-between items-center mb-1">
                         <label class="text-gray-400 font-bold">Distance Covered:</label>
@@ -148,7 +154,7 @@
         let parsedTrackpoints = []; 
         let totalCourseLengthKm = 45.0;
 
-        // Initialize Map
+        // Initialize Map layout
         const map = L.map('map', { zoomControl: false }).setView([-41.28, 174.75], 12);
         L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
@@ -165,49 +171,72 @@
             masterCoursePolyline = L.polyline(parsedTrackpoints.map(pt => [pt.lat, pt.lon]), { color: '#a855f7', weight: 4, opacity: 0.6, dashArray: '4, 6' }).addTo(map);
         }
 
+        // Parse GPX text contents directly
+        function parseGPXText(gpxText) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(gpxText, "text/xml");
+            const trkpts = xmlDoc.getElementsByTagName("trkpt");
+            
+            let tempPoints = [];
+            for (let i = 0; i < trkpts.length; i++) {
+                const lat = parseFloat(trkpts[i].getAttribute("lat"));
+                const lon = parseFloat(trkpts[i].getAttribute("lon"));
+                const eleNode = trkpts[i].getElementsByTagName("ele")[0];
+                let ele = eleNode ? parseFloat(eleNode.textContent) : 0;
+                if (!isNaN(lat) && !isNaN(lon)) {
+                    tempPoints.push({ lat: lat, lon: lon, ele: ele });
+                }
+            }
+
+            if (tempPoints.length > 0) {
+                // Scrub out dropouts to 0m (smooths chart tracking lines)
+                let lastValidEle = tempPoints.find(p => p.ele > 5)?.ele || 200;
+                tempPoints.forEach(pt => {
+                    if (pt.ele <= 5 || isNaN(pt.ele)) {
+                        pt.ele = lastValidEle;
+                    } else {
+                        lastValidEle = pt.ele;
+                    }
+                });
+
+                processHighResolutionGPXTrack(tempPoints);
+                return true;
+            }
+            return false;
+        }
+
+        // Automatic Background Loader Hook
         async function fetchEmbeddedGPX() {
             try {
                 const response = await fetch('./course.gpx');
-                if (!response.ok) throw new Error("File missing error.");
-                
+                if (!response.ok) throw new Error("404 missing path folder asset layout rules.");
                 const gpxText = await response.text();
-                const parser = new DOMParser();
-                const xmlDoc = parser.parseFromString(gpxText, "text/xml");
-                const trkpts = xmlDoc.getElementsByTagName("trkpt");
                 
-                let tempPoints = [];
-                for (let i = 0; i < trkpts.length; i++) {
-                    const lat = parseFloat(trkpts[i].getAttribute("lat"));
-                    const lon = parseFloat(trkpts[i].getAttribute("lon"));
-                    const eleNode = trkpts[i].getElementsByTagName("ele")[0];
-                    let ele = eleNode ? parseFloat(eleNode.textContent) : 0;
-                    if (!isNaN(lat) && !isNaN(lon)) {
-                        tempPoints.push({ lat: lat, lon: lon, ele: ele });
-                    }
-                }
-
-                if (tempPoints.length > 0) {
-                    // Smart Elevation Clean-Up Filter (Smooths out bad 0m drop points)
-                    let lastValidEle = tempPoints.find(p => p.ele > 0)?.ele || 200;
-                    tempPoints.forEach(pt => {
-                        if (pt.ele <= 0 || isNaN(pt.ele)) {
-                            pt.ele = lastValidEle;
-                        } else {
-                            lastValidEle = pt.ele;
-                        }
-                    });
-
-                    processHighResolutionGPXTrack(tempPoints);
-                    
+                if (parseGPXText(gpxText)) {
                     const statusIndicator = document.getElementById('gpx-status');
                     statusIndicator.innerText = "🎯 GPX Course Loaded";
                     statusIndicator.className = "bg-emerald-950/40 border border-emerald-500/30 rounded-lg px-2.5 py-1 text-[11px] text-emerald-400 font-mono";
                 }
             } catch (err) {
-                console.warn("Auto-load dropped.", err);
-                document.getElementById('gpx-status').innerText = "⚠️ course.gpx missing";
-                document.getElementById('gpx-status').className = "bg-red-950/40 border border-red-500/30 rounded-lg px-2.5 py-1 text-[11px] text-red-400 font-mono";
+                console.warn("Auto-fetch encountered an error. Ready for local backup usage.", err);
+                document.getElementById('gpx-status').innerText = "⚠️ course.gpx initialization pending";
+                document.getElementById('gpx-status').className = "bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1 text-[11px] text-amber-500 font-mono";
             }
+        }
+
+        // Manual upload backup feature route execution handlers
+        function handleManualUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                if (parseGPXText(e.target.result)) {
+                    const statusIndicator = document.getElementById('gpx-status');
+                    statusIndicator.innerText = "🎯 Manual GPX Loaded";
+                    statusIndicator.className = "bg-emerald-950/40 border border-emerald-500/30 rounded-lg px-2.5 py-1 text-[11px] text-emerald-400 font-mono";
+                }
+            };
+            reader.readAsText(file);
         }
 
         function processHighResolutionGPXTrack(pointsArray) {
@@ -246,7 +275,6 @@
             const slider = document.getElementById('input-distance-slider');
             slider.max = totalCourseLengthKm.toFixed(2);
             document.getElementById('input-distance-text').max = totalCourseLengthKm.toFixed(2);
-            document.getElementById('stat-gpx-max').innerText = `${totalCourseLengthKm.toFixed(2)} km`;
 
             drawMasterCourse();
             map.fitBounds(masterCoursePolyline.getBounds());
@@ -365,7 +393,7 @@
                 return height - paddingBottom - ((ele - minEle) / elevationRange) * chartHeight;
             }
 
-            // Grid Layout lines
+            // Grid markers rendering
             ctx.strokeStyle = '#1e293b';
             ctx.lineWidth = 1;
             ctx.fillStyle = '#64748b';
@@ -383,7 +411,7 @@
                 ctx.fillText(`${Math.round(targetEleVal)}m`, 5, yPos);
             }
 
-            // Outer Bounds Area Fill Base Shape
+            // Base Poly Fill Area Setup
             ctx.beginPath();
             ctx.moveTo(getX(0), height - paddingBottom);
             parsedTrackpoints.forEach(pt => ctx.lineTo(getX(pt.cumulativeDist), getY(pt.ele)));
@@ -391,12 +419,12 @@
             ctx.closePath();
 
             const gradient = ctx.createLinearGradient(0, paddingTop, 0, height - paddingBottom);
-            gradient.addColorStop(0, '#a855f730');
-            gradient.addColorStop(1, '#a855f702');
+            gradient.addColorStop(0, '#a855f725');
+            gradient.addColorStop(1, '#a855f701');
             ctx.fillStyle = gradient;
             ctx.fill();
 
-            // Core Profile Outline Line
+            // Render Core Trarail Plot Line
             ctx.beginPath();
             parsedTrackpoints.forEach((pt, idx) => {
                 if (idx === 0) ctx.moveTo(getX(pt.cumulativeDist), getY(pt.ele));
@@ -406,7 +434,7 @@
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Progress Overlay Path Drawing Window Bounds
+            // Progress Slider Vector Overlays
             if (activeKm > 0) {
                 ctx.beginPath();
                 ctx.moveTo(getX(0), height - paddingBottom);
@@ -421,8 +449,8 @@
                 ctx.closePath();
 
                 const activeGradient = ctx.createLinearGradient(0, paddingTop, 0, height - paddingBottom);
-                activeGradient.addColorStop(0, '#0ea5e940');
-                activeGradient.addColorStop(1, '#0ea5e902');
+                activeGradient.addColorStop(0, '#0ea5e935');
+                activeGradient.addColorStop(1, '#0ea5e901');
                 ctx.fillStyle = activeGradient;
                 ctx.fill();
 
